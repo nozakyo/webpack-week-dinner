@@ -14,73 +14,76 @@ class RakutenRecepiAPI {
 		this.$title = $('.' + options.titleClassName);
 	}
 	/**
-	 * 初期設定
+	 * 初期表示
 	 *
-	 * @return {Promise} JSONをdataに保存
+	 * @return {void} JSONをdataに保存
 	*/
 	init () {
-		this.getAPIDataOnLoading();
-		console.log('test');
+		this.updateLecipeAtLoading();
 	}
 	/**
-	 * ページ読み込み時、楽天APIからデータを取得
+	 * ページ読み込み時、レシピを一斉更新
 	 *
 	 * @return {Promise} JSONをdataに保存
 	*/
-	getAPIDataOnLoading () {
+	updateLecipeAtLoading () {
 		return new Promise((resolve, reject) => {
 			// カテゴリIDをセットしてJSON取得
 			$.getJSON(this.setURL({isSetId: true}), (result) => {
-				// ページ読み込み時の処理
+				// 短時間に複数回通信するとエラーとなるので少し時間を空ける
 				setTimeout(() => {
-					// 短時間に複数回通信するとエラーとなるので少し時間を空ける
 					$.getJSON(this.setURL({isSetId: true}), (result2) => {
-						const setData = this.setTheSecondData(result.result, result2.result);
-						this.updateStorageOnLoading(setData);
+						const getData = this.integratedAcquiredData({
+							sourceData: result.result,
+							integrateData: result2.result,
+						});
+
+						this.setLocalStorageAtLoading(getData);
 						this.updateCassetteContents();
 					});
 				}, 1000);
 			}).catch(() => {
 				if (confirm('読み込みに失敗しました。再試行しますか？')) {
-					this.getAPIDataOnLoading();
+					// 短時間に複数回通信するとエラーとなるので少し時間を空ける
+					setTimeout(() => {
+						this.updateLecipeAtLoading();
+					}, 1000);
 				}
 			});
 		});
-	};
+	}
 	/**
 	 * ページ読み込み時、ローカルストレージにデータをセット
 	 *
 	 * @return {Promise} JSONをdataに保存
 	*/
-	updateStorageOnLoading (datas) {
+	setLocalStorageAtLoading (datas) {
 		const newDate = new Date();
-		// 今日の1日前の日付に（あとで1日ずつ足していくため）
+		// 1日前の日付に変更（あとで1日ずつ足していくため）
 		newDate.setDate(newDate.getDate() - 1);
 		newDate.setHours(0);
 		newDate.setMinutes(0);
 
-		// dataの中身がある時（初回以外）
+		// dataの中身がある時の処理（初回以外）
 		if (this.data[0] !== undefined) {
 			const CALC_DATE = 1000 * 60 * 60 * 24;
-			const firstDate = this.data[0]['date'];
-			// もともとセットされていた日付
-			const oldDate = new Date(firstDate['year'], firstDate['month'], firstDate['date']);
-			// セットされていた日付と今日の差分
-			const dateDifference = Math.floor((newDate - oldDate) / CALC_DATE);
+			// ローカルストレージにセットされている1日目のデータから日付を生成
+			const firstDateData = this.data[0]['date'];
+			const originalDate = new Date(firstDateData['year'], firstDateData['month'], firstDateData['date']);
+			// セットされていた日付と今日の差分を求める
+			const dateDifference = Math.floor((newDate - originalDate) / CALC_DATE);
 
-			// 日付に差があったら
+			// 日付に差があったらデータをセットし直す
 			if (dateDifference > 0) {
 				for (let i = 0; i < datas.length; i++) {
-					// セットしたい日付に変更
+					// セットする日付に更新
 					newDate.setDate(newDate.getDate() + 1);
 
 					if (i + dateDifference < 6) {
-						console.log(i, 'アップデート');
-						// 新しいデータを上書き
+						// 差分が6未満なら、データを移行
 						this.data[i] = this.data[i + dateDifference + 1];
 					} else {
-						// 新しいデータをセット
-						console.log(i, 'new');
+						// 差分が6以上なら、新しくデータをセット
 						this.data[i] = {
 							recipe: datas[i],
 							date: {
@@ -88,18 +91,18 @@ class RakutenRecepiAPI {
 								month: newDate.getMonth(),
 								date: newDate.getDate(),
 							}
-						};
+						}
 					}
 				}
 			}
-		// dataの中身がセットされていない時（初回）
+		// dataの中身がセットされていない時の処理（初回）
 		} else {
 			// すべてのデータを上書き
 			for (let i = 0; i < datas.length; i++) {
-				// セットしたい日付
+				// セットする日付に更新
 				newDate.setDate(newDate.getDate() + 1);
 
-				// セット
+				// 新しくデータをセット
 				this.data[i] = {
 					recipe: datas[i],
 					date: {
@@ -107,101 +110,99 @@ class RakutenRecepiAPI {
 						month: newDate.getMonth(),
 						date: newDate.getDate(),
 					}
-				};
+				}
 			}
 		}
+		// ローカルストレージにセット
 		localStorage.setItem('week-dinner', JSON.stringify(this.data));
 	}
 	/**
-	 * 1つ目のデータに、2つ目のデータをセット
+	 * 1回目に取得したデータに、2回目に取得したデータを統合する
 	 *
-	 * @return {Promise} JSONをdataに保存
+	 * @param {object} sourceData 1回目に取得したデータ
+	 * @param {object} integrateData 2回目に取得したデータ
+	 * @return {object} レシピ一覧
 	*/
-	setTheSecondData (result1, result2) {
-		result1[4] = result2[0];
-		result1[5] = result2[1];
-		result1[6] = result2[2];
-		return result1;
+	integratedAcquiredData ({sourceData, integrateData}) {
+		sourceData[4] = integrateData[0];
+		sourceData[5] = integrateData[1];
+		sourceData[6] = integrateData[2];
+		return sourceData;
 	}
 	/**
-	 * 楽天APIからデータを取得
+	 * ランダムのレシピに更新
 	 *
 	 * @return {Promise} JSONをdataに保存
 	*/
-	getAPIData (option) {
+	updateRandomLecipe ({dateNumber}) {
 		return new Promise(() => {
 			// カテゴリIDをセットしてJSON取得
 			$.getJSON(this.setURL({isSetId: true}), (result) => {
-				// 日付を指定の処理
-				this.updateStorageAtDate(result.result[this.setRandomNum(4)], option.dateNumber);
+				// 日にち区分を指定してローカルストレージに保存
+				this.updateLocalStorageSpecifiedDate({
+					data: result.result[this.setRandomNum(4)],
+					dateNumber,
+				});
+				this.updateCassetteContents();
 			}).catch(() => {
 				if (confirm('読み込みに失敗しました。再試行しますか？')) {
-					this.ajaxRequest();
+					this.updateRandomLecipe();
 				}
 			});
 		});
-	};
+	}
 	/**
-	 * 日付を指定して、ローカルストレージにデータをセット
+	 * 日にち区分を指定してローカルストレージに保存
 	 *
-	 * @return {Promise} JSONをdataに保存
+	 * @return {void}
 	*/
-	updateStorageAtDate (data, dateNumber) {
+	updateLocalStorageSpecifiedDate ({data, dateNumber}) {
 		this.data[dateNumber]['recipe'] = data;
 		localStorage.setItem('week-dinner', JSON.stringify(this.data));
 	}
 	/**
 	 * URLを生成
 	 *
-	 * @return {Promise} APIを取得するURL
+	 * @param {boolean} isSetId カテゴリIDをセットするか
+	 * @return {string} URL
 	*/
-	setURL (option) {
-		const isSetId = option.isSetId || false;
+	setURL ({isSetId}) {
 		let url = 'https://app.rakuten.co.jp/services/api/Recipe/CategoryRanking/20170426?';
 		// カテゴリIDが必要だったらセット
 		const params = {
 			format: 'json',
-			categoryId: this.setCategoryId({isSetId: true}),
+			categoryId: isSetId ? this.setRandomCategoryId() : null,
 			applicationId: '1099641121016352250',
 		}
 
 		// URL生成
 		for (const param in params) {
-			if (!(param === null)) {
-				const str = `${param}=${params[param]}&`;
-				url += str;
-			}
+			const str = !(param === null) ? `${param}=${params[param]}&` : '';
+			url += str;
 		}
 		return url;
 	}
 	/**
-	 * ランダムのカテゴリIDを取得
+	 * ランダムのカテゴリIDを返却
 	 *
-	 * @return {number} カテゴリID or null
-	 * @return {number} カテゴリIDをセットするか
+	 * @return {Number} カテゴリID
 	*/
-	setCategoryId (option) {
-		const isSetId = option.isSetId || false;
-		if (isSetId) {
-			return this.categoryIdList[this.setRandomNum(this.categoryIdList.length)];
-		} else {
-			return null;
-		}
+	setRandomCategoryId () {
+		return this.categoryIdList[this.setRandomNum(this.categoryIdList.length)];
 	}
 	/**
-	 * 引数のうちランダムな整数を返す
+	 * 最大値のうちランダムな整数を返す
 	 *
-	 * @return {Number} 整数
-	 * @return {Array} 上限の数字
+	 * @param {Number} maxNumber 最大値
+	 * @return {Number} ランダム数字
 	*/
-	setRandomNum (number) {
-		return Math.floor(Math.random() * number);
+	setRandomNum (maxNumber) {
+		return Math.floor(Math.random() * maxNumber);
 	}
 	/**
 	 * カセットのデータを更新
 	 *
-	 * @return {Number} 整数
-	 * @return {Array} 上限の数字
+	 * @return {void}
 	*/
 	updateCassetteContents () {
 		for (let i = 0; i < 7; i++) {
@@ -209,53 +210,44 @@ class RakutenRecepiAPI {
 			const $target = $(`.js-recipe[data-date-num="${i}"]`);
 
 			// 画像
-			const $img = $target.find('.js-recipe_image');
-			$img.attr('style', `background-image:url(${recipeData.foodImageUrl});`);
+			$target.find('.js-recipe_image').attr('style', `background-image:url(${recipeData.foodImageUrl});`);
 			// 時間
-			const $time = $target.find('.js-recipe_time');
-			$time.text(recipeData.recipeIndication);
+			$target.find('.js-recipe_time').text(recipeData.recipeIndication);
 			// 金額
-			const $price = $target.find('.js-recipe_price');
-			$price.text(recipeData.recipeCost);
+			$target.find('.js-recipe_price').text(recipeData.recipeCost);
 			// タイトル
-			const $title = $target.find('.js-recipe_title');
-			$title.text(recipeData.recipeTitle);
+			$target.find('.js-recipe_title').text(recipeData.recipeTitle);
 		}
 	}
 	/**
 	 * モーダルのデータを更新
 	 *
-	 * @return {Number} 整数
-	 * @return {Array} 上限の数字
+	 * @param {object} $currentTarget $(e.target)
+	 * @param {void} recipeClassName 'js-recipe'
+	 * @return {void}
 	*/
 	updateModalContents ({$currentTarget, recipeClassName}) {
-		const $recipe = $currentTarget.closest('.' + recipeClassName);
-		const num = $recipe.data('date-num');
+		// 日にち区分の数字を取得
+		const num = $currentTarget.closest('.' + recipeClassName).data('date-num');
 
 		const recipeData = this.data[num].recipe;
 		const $target = $('.js-modal_recipe');
-		// $target.scrollTo(0, 0);
-
-		// レシピ区分
-		const $subTitle = $('.js-modal_sub_title')
 		const division = ['今日', '明日', '明後日', '3日後', '4日後', '5日後', '6日後'];
-		$subTitle.text(`${division[num]}のレシピ`);
+
+		// 日にち区分
+		$('.js-modal_sub_title').text(`${division[num]}のレシピ`);
 		// 画像
-		const $img = $target.find('.js-modal_image');
-		$img.attr('src', recipeData.foodImageUrl);
-		$img.attr('alt', recipeData.recipeTitle);
+		$target.find('.js-modal_image').attr('src', recipeData.foodImageUrl).attr('alt', recipeData.recipeTitle);
 		// 時間
-		const $time = $target.find('.js-modal_time');
-		$time.text(recipeData.recipeIndication);
+		$target.find('.js-modal_time').text(recipeData.recipeIndication);
 		// 金額
-		const $price = $target.find('.js-modal_price');
-		$price.text(recipeData.recipeCost);
+		$target.find('.js-modal_price').text(recipeData.recipeCost);
 		// タイトル
-		const $title = $target.find('.js-modal_title');
-		$title.text(recipeData.recipeTitle);
+		$target.find('.js-modal_title').text(recipeData.recipeTitle);
 		// 説明
-		const $text = $target.find('.js-modal_text');
-		$text.text(recipeData.recipeDescription);
+		$target.find('.js-modal_text').text(recipeData.recipeDescription);
+		// リンク
+		$target.find('.js-modal_link').attr('href', recipeData.recipeUrl);
 		// 材料
 		const $material = $target.find('.js-modal_material');
 		for (var i = 0; i < recipeData.recipeMaterial.length; i++) {
@@ -264,9 +256,6 @@ class RakutenRecepiAPI {
 			`;
 			$material.append(insertHtml);
 		}
-		// リンク
-		const $link = $target.find('.js-modal_link');
-		$link.attr('href', recipeData.recipeUrl);
 	}
 }
 

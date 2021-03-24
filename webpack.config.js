@@ -83,17 +83,13 @@ module.exports = {
 					}
 				]
 			},
-			{
-				test: /\.(gif|png|jpe?g|svg|eot|wof|woff|ttf)$/i,
-				use: [
-					{
-						loader: 'file-loader',
-						options: {
-							name: './assets/img/[name].[ext]',
-						}
-					}
-				],
-			},
+			// {
+			// 	test: /\.(gif|png|jpe?g|svg|eot|wof|woff|ttf)$/i,
+			// 	loader: 'file-loader',
+			// 	options: {
+			// 		name: './assets/img/[name].[ext]',
+			// 	}
+			// },
 		],
 	},
 	plugins: [
@@ -119,18 +115,18 @@ module.exports = {
 			filename: 'index.html',
 			template : './src/index.ejs',
 		}),
-		// new HtmlWebpackPlugin({
-		// 	filename: 'buy.html',
-		// 	template : './src/buy.ejs',
-		// }),
-		// new HtmlWebpackPlugin({
-		// 	filename: 'delete.html',
-		// 	template : './src/delete.ejs',
-		// }),
-		// new HtmlWebpackPlugin({
-		// 	filename: 'entry.html',
-		// 	template : './src/entry.ejs',
-		// }),
+		new HtmlWebpackPlugin({
+			filename: 'buy.html',
+			template : './src/buy.ejs',
+		}),
+		new HtmlWebpackPlugin({
+			filename: 'delete.html',
+			template : './src/delete.ejs',
+		}),
+		new HtmlWebpackPlugin({
+			filename: 'entry.html',
+			template : './src/entry.ejs',
+		}),
 		new webpack.ProvidePlugin({
 			$: 'jquery'
 		})
